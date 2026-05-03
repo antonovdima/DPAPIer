@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="DPAPIerLib/DPAPIerLib.csproj" />
+  <Project Path="DPAPIer/DPAPIer.csproj" />
+  <Project Path="DPAPIerLib.Tests/DPAPIerLib.Tests.csproj" />
+</Solution>
