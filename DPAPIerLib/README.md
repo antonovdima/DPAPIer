@@ -140,7 +140,14 @@ byte[] plain = DPAPIer.DecryptBytes(encrypted);
 String methods encode and decode text as UTF-8:
 
 ```csharp
-byte[] encrypted = DPAPIer.EncryptStringUser("secret text");
+string encrypted = DPAPIer.EncryptStringUser("secret text");
+string plain = DPAPIer.DecryptString(encrypted);
+```
+
+The encrypted string is Base64 text. If the application needs the raw encrypted DPAPI bytes instead:
+
+```csharp
+byte[] encrypted = DPAPIer.EncryptStringToBytesUser("secret text");
 string plain = DPAPIer.DecryptString(encrypted);
 ```
 
@@ -149,6 +156,7 @@ Machine protection is available for encrypting:
 ```csharp
 DPAPIer.EncryptBytesMachine(...)
 DPAPIer.EncryptStringMachine(...)
+DPAPIer.EncryptStringToBytesMachine(...)
 ```
 
 ## Encrypted Key/Value Files

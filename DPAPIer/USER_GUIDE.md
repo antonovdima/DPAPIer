@@ -63,6 +63,34 @@ DPAPIer d -f "secret.dpapi" -t "plain.txt"
 
 No `user` or `machine` argument is used for decrypting.
 
+## Encrypt a String
+
+Encrypt text directly and print the encrypted string:
+
+```text
+DPAPIer es user "secret text"
+DPAPIer -es -u "secret text"
+DPAPIer es user cc "secret text"
+```
+
+The protection choice, `cc`, and text can appear in any order after `es`. Without prefixes, the text cannot be `u`, `user`, `m`, `machine`, or `cc` because those are read as options.
+
+When `cc`, `-cc`, or `/cc` is included, DPAPIer copies the encrypted string to the Clipboard and prints:
+
+```text
+Copied to Clipboard.
+```
+
+## Decrypt a String
+
+Decrypt an encrypted string and print the plaintext:
+
+```text
+DPAPIer ds "<encrypted string>"
+```
+
+No `user` or `machine` argument is used for decrypting strings.
+
 ## Replace the Original File
 
 To encrypt or decrypt the original file directly, add `o` and omit `-t`:
@@ -164,6 +192,9 @@ For `re`, the `user` or `machine` argument describes the existing file's protect
 
 ```text
 DPAPIer e u -f "plain.txt" -t "secret.dpapi"
+DPAPIer es u "secret"
+DPAPIer es u cc "secret"
+DPAPIer ds "<encrypted string>"
 DPAPIer d -f "secret.dpapi" -t "plain.txt"
 DPAPIer s u -f "values.dpapi" -k "Password" -v "secret"
 DPAPIer g -f "values.dpapi" -k "Password"
@@ -175,6 +206,8 @@ DPAPIer r -f "values.dpapi" -k "Password"
 ## Tips
 
 - Put quotes around file names or values that contain spaces.
+- `es` and `ds` work with strings directly and print only the result.
+- Add `cc`, `-cc`, or `/cc` to `es` to copy the encrypted result to the Clipboard.
 - Delimiter may be mixed with positional arguments.
 - For `encrypt`, one- or two-character delimiters made only from punctuation or symbols, such as `=`, `:`, `::`, or `=>`, can be used without `-d`.
 - Use `user` for writing unless another Windows account on the same computer needs to decrypt the data.

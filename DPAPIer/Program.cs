@@ -1,10 +1,16 @@
 using DPAPIerLib;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace DPAPIer;
 
 internal static class Program {
+    private const uint CF_UNICODETEXT = 13;
+    private const uint GMEM_MOVEABLE = 0x0002;
+    private const uint GMEM_ZEROINIT = 0x0040;
     private const string NotFound = "*** not found ***";
 
+    [STAThread]
     private static int Main(string[] args) {
         return DoIt(args);
     }
@@ -31,6 +37,8 @@ internal static class Program {
             return parsed.Action switch {
                 ActionKind.Encrypt => Encrypt(parsed),
                 ActionKind.Decrypt => Decrypt(parsed),
+                ActionKind.EncryptString => EncryptString(parsed),
+                ActionKind.DecryptString => DecryptString(parsed),
                 ActionKind.ReEncrypt => ReEncrypt(parsed),
                 ActionKind.Get => Get(parsed),
                 ActionKind.Keys => Keys(parsed),
@@ -71,6 +79,42 @@ internal static class Program {
         DPAPIerLib.DPAPIer.DecryptFile(args.File, target.TargetFile, target.InPlace);
 
         Console.WriteLine("Done");
+        return 0;
+    }
+
+    private static int EncryptString(ParsedArguments args) {
+        RequireValue(args);
+        RequireScope(args);
+        ForbidFile(args);
+        ForbidKey(args);
+        ForbidTarget(args);
+        ForbidOverride(args);
+        ForbidDelimiter(args);
+
+        string encrypted = args.Scope == Scope.Machine
+            ? DPAPIerLib.DPAPIer.EncryptStringMachine(args.Value!)
+            : DPAPIerLib.DPAPIer.EncryptStringUser(args.Value!);
+
+        if (args.CopyToClipboard) {
+            CopyTextToClipboard(encrypted);
+            Console.WriteLine("Copied to Clipboard.");
+            return 0;
+        }
+
+        Console.WriteLine(encrypted);
+        return 0;
+    }
+
+    private static int DecryptString(ParsedArguments args) {
+        RequireValue(args);
+        ForbidScope(args);
+        ForbidFile(args);
+        ForbidKey(args);
+        ForbidTarget(args);
+        ForbidOverride(args);
+        ForbidDelimiter(args);
+
+        Console.WriteLine(DPAPIerLib.DPAPIer.DecryptString(args.Value!));
         return 0;
     }
 
@@ -185,6 +229,10 @@ internal static class Program {
         if (string.IsNullOrEmpty(args.File)) throw new UsageException("File is required.");
     }
 
+    private static void ForbidFile(ParsedArguments args) {
+        if (args.File is not null) throw new UsageException("File is not valid for this action.");
+    }
+
     private static void RequireKey(ParsedArguments args) {
         if (string.IsNullOrEmpty(args.Key)) throw new UsageException("Key is required.");
     }
@@ -247,6 +295,42 @@ internal static class Program {
         return args.Length > 1 && NormalizeToken(args[1]) is "v" or "verbose";
     }
 
+    private static void CopyTextToClipboard(string text) {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clipboard copy is only available on Windows.");
+
+        if (!OpenClipboard(IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+        IntPtr memory = IntPtr.Zero;
+        bool transferred = false;
+
+        try {
+            if (!EmptyClipboard()) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            byte[] bytes = Encoding.Unicode.GetBytes(text);
+            memory = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, (UIntPtr)(bytes.Length + 2));
+            if (memory == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            IntPtr lockedMemory = GlobalLock(memory);
+            if (lockedMemory == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            try {
+                Marshal.Copy(bytes, 0, lockedMemory, bytes.Length);
+                Marshal.WriteInt16(lockedMemory, bytes.Length, 0);
+            } finally {
+                GlobalUnlock(memory);
+            }
+
+            if (SetClipboardData(CF_UNICODETEXT, memory) == IntPtr.Zero) {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            transferred = true;
+        } finally {
+            CloseClipboard();
+            if (!transferred && memory != IntPtr.Zero) GlobalFree(memory);
+        }
+    }
+
     private static void ShowHelp(bool verbose = false) {
         ShowHelp(Console.Out, verbose);
     }
@@ -264,6 +348,8 @@ Utility to encrypt/decrypt files or values with Windows DPAPI.
 Usage:
   DPAPIer e|encrypt  u|user|m|machine [o|override] -f <file> [-t <target>] [-d <delimiter>]
   DPAPIer d|decrypt  [o|override] -f <file> [-t <target>]
+  DPAPIer es|-es     u|user|m|machine [cc|-cc] <string>
+  DPAPIer ds|-ds     <encrypted-string>
   DPAPIer re|reencrypt u|user|m|machine [o|override] -f <file> [-t <target>]
   DPAPIer p|put      [u|user|m|machine] -f <file> -k <key> -v <value> [-d <delimiter>]
   DPAPIer s|set|store [u|user|m|machine] -f <file> -k <key> -v <value> [-d <delimiter>]
@@ -280,12 +366,17 @@ Arguments:
   -t, --target, /target Target file. Omit for in-place file operation.
   -k, --key, /key      Value key.
   -v, --value, /value  Value to store.
+  cc, -cc, /cc         Copy encrypt-string result to Clipboard.
   -d, --delimiter      Key/value delimiter. Can be mixed with positional args.
                        For encrypt, adds value metadata. For value commands,
                        uses stored delimiter when omitted.
 
 Examples:
   DPAPIer e u -f "plain file.txt" -t "secret file.dpapi"
+  DPAPIer es u "secret text"
+  DPAPIer -es -u "secret text"
+  DPAPIer es u cc "secret text"
+  DPAPIer ds "<encrypted string>"
   DPAPIer e u = "plain values.txt" "values.dpapi"
   DPAPIer d -f "secret file.dpapi" -t "plain file.txt"
   DPAPIer s user -f "values.dpapi" -k "Password" -v "correct horse battery staple"
@@ -364,6 +455,17 @@ Usage:
     In this case argument o or override is required, because source file is
     completely rewritten.
 
+  DPAPIer es|-es     u|user|m|machine [cc|-cc] <string>
+    Encrypt the provided string and print the encrypted Base64 string. The
+    protection choice, cc, and string may be placed in any order after es. With
+    cc, the encrypted string is copied to Clipboard and a reminder is printed
+    instead. Bare strings cannot be u, user, m, machine, or cc because those are
+    read as options.
+
+  DPAPIer ds|-ds     <encrypted-string>
+    Decrypt the provided encrypted Base64 string and print the plaintext. No
+    user/machine choice is accepted; DPAPI reads that from the encrypted string.
+
   DPAPIer re|reencrypt u|user|m|machine [o|override] -f <file> [-t <target>]
     Re-encrypt given value file from the provided current protection to the
     opposite one. If @scope is present, it must match. If @scope is missing,
@@ -399,6 +501,8 @@ Usage:
 Positional forms:
   DPAPIer e  <user|machine> [o] <file> [target]
   DPAPIer d  [o] <file> [target]
+  DPAPIer es <user|machine> [cc] <string>
+  DPAPIer ds <encrypted-string>
   DPAPIer re <user|machine> [o] <file> [target]
   DPAPIer g  <file> <key> [delimiter]
   DPAPIer keys|-keys <file> [delimiter]
@@ -412,6 +516,7 @@ Named arguments:
   -t, --target, /target       Target file.
   -k, --key, /key             Value key.
   -v, --value, /value         Value to store.
+  cc, -cc, /cc                Copy encrypt-string result to Clipboard.
   -d, --delimiter, /delimiter Key/value delimiter. For encrypt, adds value
                               metadata. For value commands, uses @delimiter
                               when omitted.
@@ -438,6 +543,10 @@ Rules:
 
 Examples:
   DPAPIer e u -f "plain file.txt" -t "secret file.dpapi"
+  DPAPIer es u "secret text"
+  DPAPIer -es -u "secret text"
+  DPAPIer es u cc "secret text"
+  DPAPIer ds "<encrypted string>"
   DPAPIer d "secret file.dpapi" "plain file.txt"
   DPAPIer e u o "plain file.txt"
   DPAPIer s user -f "values.dpapi" -k "Password" -v "correct horse battery staple"
@@ -473,6 +582,7 @@ Help (v is this verbose help):
         public required ActionKind Action { get; init; }
         public Program.Scope? Scope { get; private set; }
         public bool Override { get; private set; }
+        public bool CopyToClipboard { get; private set; }
         public string? File { get; private set; }
         public string? Target { get; private set; }
         public string? Key { get; private set; }
@@ -490,7 +600,7 @@ Help (v is this verbose help):
                 string arg = args[i];
                 string token = NormalizeToken(arg);
 
-                if (!sawNamed && !sawPositionalData && TryParseScope(token, out Program.Scope scope)) {
+                if ((action == ActionKind.EncryptString || !sawNamed && !sawPositionalData) && TryParseScope(token, out Program.Scope scope)) {
                     if (parsed.Scope is not null) throw new UsageException("Scope is presented more than once.");
                     parsed.Scope = scope;
                     continue;
@@ -498,6 +608,12 @@ Help (v is this verbose help):
 
                 if (!sawNamed && !sawPositionalData && (token is "o" or "override")) {
                     parsed.Override = true;
+                    continue;
+                }
+
+                if (action == ActionKind.EncryptString && token is "cc") {
+                    if (parsed.CopyToClipboard) throw new UsageException("Copy to Clipboard is presented more than once.");
+                    parsed.CopyToClipboard = true;
                     continue;
                 }
 
@@ -533,6 +649,8 @@ Help (v is this verbose help):
             return NormalizeToken(value) switch {
                 "e" or "encrypt" => ActionKind.Encrypt,
                 "d" or "decrypt" => ActionKind.Decrypt,
+                "es" or "encryptstring" or "encrypt-string" => ActionKind.EncryptString,
+                "ds" or "decryptstring" or "decrypt-string" => ActionKind.DecryptString,
                 "re" or "reencrypt" => ActionKind.ReEncrypt,
                 "g" or "get" => ActionKind.Get,
                 "keys" => ActionKind.Keys,
@@ -634,6 +752,11 @@ Help (v is this verbose help):
                     if (values.Count > 2) Value = values[2];
                     if (values.Count > 3) SetDelimiter(values[3]);
                     break;
+                case ActionKind.EncryptString:
+                case ActionKind.DecryptString:
+                    if (values.Count > 1) throw new UsageException("Too many positional arguments for string action.");
+                    if (values.Count > 0) Value = values[0];
+                    break;
             }
         }
 
@@ -642,6 +765,8 @@ Help (v is this verbose help):
     private enum ActionKind {
         Encrypt,
         Decrypt,
+        EncryptString,
+        DecryptString,
         ReEncrypt,
         Get,
         Keys,
@@ -658,4 +783,28 @@ Help (v is this verbose help):
     private sealed record FileTarget(string TargetFile, bool InPlace);
 
     private sealed class UsageException(string message) : Exception(message);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalFree(IntPtr hMem);
 }

@@ -272,8 +272,10 @@ namespace DPAPIerLib {
             return Unprotect(encryptedData);
         }
 
-        public static byte[] EncryptStringUser(string value) => EncryptString(value, DPAPILevel.User);
-        public static byte[] EncryptStringMachine(string value) => EncryptString(value, DPAPILevel.Machine);
+        public static string EncryptStringUser(string value) => Convert.ToBase64String(EncryptStringToBytesUser(value));
+        public static string EncryptStringMachine(string value) => Convert.ToBase64String(EncryptStringToBytesMachine(value));
+        public static byte[] EncryptStringToBytesUser(string value) => EncryptString(value, DPAPILevel.User);
+        public static byte[] EncryptStringToBytesMachine(string value) => EncryptString(value, DPAPILevel.Machine);
 
         private static byte[] EncryptString(string value, DPAPILevel level) {
             if (value == null) throw new ArgumentNullException(nameof(value));
@@ -283,6 +285,11 @@ namespace DPAPIerLib {
         public static string DecryptString(byte[] encryptedData) {
             if (encryptedData == null) throw new ArgumentNullException(nameof(encryptedData));
             return Encoding.UTF8.GetString(Unprotect(encryptedData));
+        }
+
+        public static string DecryptString(string encryptedData) {
+            if (encryptedData == null) throw new ArgumentNullException(nameof(encryptedData));
+            return DecryptString(Convert.FromBase64String(encryptedData));
         }
 
         public static bool CanDecrypt(string fileName) {

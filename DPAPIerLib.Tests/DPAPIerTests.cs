@@ -9,7 +9,18 @@ public sealed class DPAPIerTests {
     [Fact]
     public void EncryptStringUser_round_trips_plain_text() {
         RunOnWindows(() => {
-            byte[] encrypted = Dpapi.EncryptStringUser("plain text");
+            string encrypted = Dpapi.EncryptStringUser("plain text");
+
+            Assert.NotEqual("plain text", encrypted);
+            Assert.NotEmpty(Convert.FromBase64String(encrypted));
+            Assert.Equal("plain text", Dpapi.DecryptString(encrypted));
+        });
+    }
+
+    [Fact]
+    public void EncryptStringToBytesUser_round_trips_plain_text() {
+        RunOnWindows(() => {
+            byte[] encrypted = Dpapi.EncryptStringToBytesUser("plain text");
 
             Assert.NotEqual("plain text", Encoding.UTF8.GetString(encrypted));
             Assert.Equal("plain text", Dpapi.DecryptString(encrypted));
@@ -102,6 +113,65 @@ public sealed class DPAPIerTests {
     [Fact]
     public void EncryptBytesUser_rejects_null_data() {
         Assert.Throws<ArgumentNullException>(() => Dpapi.EncryptBytesUser(null!));
+    }
+
+    [Fact]
+    public void SecretsProvider_static_cache_returns_values_and_defaults() {
+        RunOnWindows(() => {
+            using TempDirectory temp = new();
+            string fileName = temp.PathFor("values.dpapi");
+            Dpapi.StoreValueUser(fileName, "ApiKey", "secret");
+
+            using SecretsProvider provider = new(fileName, SecretsRefreshMode.StaticCache);
+
+            Assert.Equal("secret", provider.GetValue("apikey"));
+            Assert.Equal("fallback", provider.GetValue("missing", "fallback"));
+        });
+    }
+
+    [Fact]
+    public void SecretsProvider_dynamic_passes_default_value_to_dpapi() {
+        RunOnWindows(() => {
+            using TempDirectory temp = new();
+            string fileName = temp.PathFor("values.dpapi");
+            Dpapi.StoreValueUser(fileName, "ApiKey", "secret", delimiter: ":");
+
+            using SecretsProvider provider = new(fileName, SecretsRefreshMode.Dynamic);
+
+            Assert.Equal("fallback", provider.GetValue("missing", "fallback"));
+        });
+    }
+
+    [Fact]
+    public void SecretsProvider_save_value_refreshes_cache_with_normalized_key() {
+        RunOnWindows(() => {
+            using TempDirectory temp = new();
+            string fileName = temp.PathFor("values.dpapi");
+            Dpapi.StoreValueUser(fileName, "ApiKey", "old");
+
+            using SecretsProvider provider = new(fileName, SecretsRefreshMode.StaticCache);
+            provider.SaveValue("  apikey  ", "new");
+
+            Assert.Equal("new", provider.GetValue("ApiKey"));
+        });
+    }
+
+    [Fact]
+    public void SecretsProvider_refreshes_cache_after_external_atomic_update() {
+        RunOnWindows(() => {
+            using TempDirectory temp = new();
+            string fileName = temp.PathFor("values.dpapi");
+            Dpapi.StoreValueUser(fileName, "ApiKey", "old");
+
+            using SecretsProvider provider = new(fileName);
+            Dpapi.StoreValue(fileName, "ApiKey", "new");
+
+            bool refreshed = SpinWait.SpinUntil(
+                () => provider.GetValue("ApiKey") == "new",
+                TimeSpan.FromSeconds(5));
+
+            Assert.True(refreshed);
+        });
     }
 
     private static void RunOnWindows(Action test) {

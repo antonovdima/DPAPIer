@@ -60,6 +60,8 @@ If `-d` or `--delimiter` is omitted, an existing file uses its `@delimiter` mark
 ```text
 DPAPIer e|encrypt    u|user|m|machine [o|override] -f <file> [-t <target>] [-d <delimiter>]
 DPAPIer d|decrypt    [o|override] -f <file> [-t <target>]
+DPAPIer es|-es       u|user|m|machine [cc|-cc] <string>
+DPAPIer ds|-ds       <encrypted-string>
 DPAPIer re|reencrypt u|user|m|machine [o|override] -f <file> [-t <target>]
 DPAPIer p|put        [u|user|m|machine] -f <file> -k <key> -v <value> [-d <delimiter>]
 DPAPIer s|set|store  [u|user|m|machine] -f <file> -k <key> -v <value> [-d <delimiter>]
@@ -70,6 +72,8 @@ DPAPIer r|remove     [u|user|m|machine] -f <file> -k <key> [-d <delimiter>]
 ```
 
 `put`, `set`, and `store` are synonyms. They create or overwrite a value.
+
+`es` encrypts a provided string and prints the encrypted Base64 string. If `cc`, `-cc`, or `/cc` is included, the encrypted string is copied to the Clipboard instead and a reminder is printed. `ds` decrypts that encrypted string and prints the plaintext. `es` requires `user` or `machine`; `ds` does not accept a scope.
 
 For `put`, `set`, and `store`, `user` or `machine` is required only when creating a value file. Existing value files use their `@scope` marker. If `user` or `machine` is provided for an existing file, it must match `@scope`.
 
@@ -86,6 +90,8 @@ For `reencrypt`, `user` or `machine` is the current protection. If `@scope` exis
 ```text
 DPAPIer e  <user|machine> [o] <file> [target]
 DPAPIer d  [o] <file> [target]
+DPAPIer es <user|machine> [cc] <string>
+DPAPIer ds <encrypted-string>
 DPAPIer re <user|machine> [o] <file> [target]
 DPAPIer g  <file> <key> [delimiter]
 DPAPIer keys|-keys <file> [delimiter]
@@ -104,6 +110,7 @@ Named value/file arguments and positional value/file arguments cannot be mixed i
 -t, --target, /target       Target file for file encrypt/decrypt/reencrypt.
 -k, --key, /key             Key name for value commands.
 -v, --value, /value         Value to store.
+cc, -cc, /cc                Copy encrypt-string result to Clipboard.
 -d, --delimiter, /delimiter Key/value delimiter. For encrypt, adds value metadata. For value commands, uses @delimiter when omitted.
 ```
 
@@ -111,6 +118,10 @@ Named value/file arguments and positional value/file arguments cannot be mixed i
 
 ```text
 DPAPIer e user -f "plain file.txt" -t "secret file.dpapi"
+DPAPIer es user "secret text"
+DPAPIer -es -u "secret text"
+DPAPIer es user cc "secret text"
+DPAPIer ds "<encrypted string>"
 DPAPIer e user -f "plain values.txt" -t "values.dpapi" -d "="
 DPAPIer e user = "plain values.txt" "values.dpapi"
 DPAPIer d -f "secret file.dpapi" -t "plain file.txt"
