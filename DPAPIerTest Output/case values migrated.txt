@@ -1,2 +1,0 @@
-@scope m
-Mixed Case Key=Value With Spaces

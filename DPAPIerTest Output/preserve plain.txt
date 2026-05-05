@@ -1,6 +1,0 @@
-first note line
-
-  pwd   =  original password
-not a pair at all
-other=two spaces  
-
